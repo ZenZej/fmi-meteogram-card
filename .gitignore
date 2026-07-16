@@ -1,0 +1,6 @@
+# Local agent/dev context, not shipped (matches the sibling repos' convention).
+CLAUDE.md
+
+# OS / editor cruft
+.DS_Store
+*.swp
