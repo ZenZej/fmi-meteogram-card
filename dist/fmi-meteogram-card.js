@@ -110,6 +110,7 @@ class FmiMeteogramCard extends HTMLElement {
       title: config.title || 'Forecast',
       hours_past: config.hours_past ?? 12,
       hours_future: config.hours_future ?? 24,
+      history_interval: Math.max(60, config.history_interval ?? 600),  // seconds; thinning bucket for the measured past
       refresh_interval: config.refresh_interval ?? 300,   // seconds; keeps a never-reloaded tablet current
       outdoor_temperature: config.outdoor_temperature || null,
       entities: {
@@ -194,7 +195,7 @@ class FmiMeteogramCard extends HTMLElement {
 
     const pastRaw = (this._measured || [])
       .filter(p => p.time >= now - this._config.hours_past * 3600 && p.time < future[0]?.time);
-    const past = this._hourlyThin(pastRaw)
+    const past = this._thin(pastRaw, this._config.history_interval)
       .map(p => ({ time: p.time, temp: p.temp, measured: true,
                    feels_like: null, rain: 0, wind_speed: null, wind_dir: null, symbol: null }));
 
@@ -202,18 +203,18 @@ class FmiMeteogramCard extends HTMLElement {
   }
 
   // HA records the outdoor sensor on every change (often sub-minute), so the raw
-  // measured history holds far more points than the hourly forecast. Since the
-  // x-axis spaces points by index, those dense points would dwarf the forecast
-  // and shove it off the right edge. Thin to ~one sample per clock hour (the
-  // one nearest the hour mark), matching the forecast cadence.
-  _hourlyThin(rows) {
-    const byHour = new Map();
+  // measured history holds far more points than we want to draw. Thin it to one
+  // sample per `sec`-wide bucket (the one nearest the bucket centre). The x-axis
+  // is time-proportional, so denser buckets just smooth the past line without
+  // stealing width from the forecast.
+  _thin(rows, sec) {
+    const by = new Map();
     for (const p of rows) {
-      const hour = Math.round(p.time / 3600);
-      const cur = byHour.get(hour);
-      if (!cur || Math.abs(p.time - hour * 3600) < Math.abs(cur.time - hour * 3600)) byHour.set(hour, p);
+      const b = Math.round(p.time / sec);
+      const cur = by.get(b);
+      if (!cur || Math.abs(p.time - b * sec) < Math.abs(cur.time - b * sec)) by.set(b, p);
     }
-    return [...byHour.values()].sort((a, b) => a.time - b.time);
+    return [...by.values()].sort((a, b) => a.time - b.time);
   }
 
   // Pull the outdoor sensor's recent history once per entity change. HA gives a
@@ -318,7 +319,12 @@ class FmiMeteogramCard extends HTMLElement {
     // Rain axis spans the full plot height (ticks + bars top-to-bottom), same
     // vertical extent as the °C axis.
     const rMax = Math.max(...rains, 1), rainH = tBot - tTop;
-    const xs = i => padL + i * (W - padL - padR) / (n - 1);
+    // Time-proportional x-axis: position by timestamp, not index, so a densely
+    // sampled past (e.g. 10-min buckets) keeps its true share of the width
+    // instead of crowding out the hourly forecast.
+    const t0 = pts[0].time, tSpan = Math.max(pts[n - 1].time - t0, 1);
+    const xt = t => padL + (t - t0) / tSpan * (W - padL - padR);
+    const xs = i => xt(pts[i].time);
     const yT = t => tTop + (1 - (t - tMin) / (tMax - tMin)) * (tBot - tTop);
     const linePts = pts.map((p, i) => [xs(i), yT(p.temp)]);
     const feelsPts = pts.map((p, i) => p.feels_like != null ? [xs(i), yT(p.feels_like)] : null).filter(Boolean);
@@ -344,19 +350,22 @@ class FmiMeteogramCard extends HTMLElement {
     const rTicks = rMax <= 1 ? [0, 0.5, 1] : (rMax <= 2 ? [0, 1, 2] : [0, Math.round(rMax / 2), Math.ceil(rMax)]);
     rTicks.forEach(rv => { const ry = tBot - (rv / rMax) * rainH;
       svg.appendChild(svgEl('text', { x: W - padR + 6, y: ry + 4, 'text-anchor': 'start', 'font-size': 12, 'font-weight': 600, fill: th.tick }, rv)); });
-    // rain bars
-    const bw = (W - padL - padR) / n * 0.5;
+    // rain bars — half an hour-slot wide (rain is forecast-only and hourly)
+    const bw = Math.max(3, (W - padL - padR) * 3600 / tSpan * 0.5);
     for (let j = 0; j < n; j++) if (pts[j].rain > 0) { const hh = pts[j].rain / rMax * rainH;
       svg.appendChild(svgEl('rect', { x: xs(j) - bw / 2, y: tBot - hh, width: bw, height: hh, rx: 2, fill: th.rain })); }
     // area + feels + temp line, colour-by-temperature
     svg.appendChild(svgEl('path', { d: smoothPath(linePts) + ` L ${xs(n-1)} ${tBot} L ${xs(0)} ${tBot} Z`, fill: 'url(#tempgrad)', 'fill-opacity': th.fillOpacity }));
     svg.appendChild(svgEl('path', { d: smoothPath(feelsPts), fill: 'none', stroke: 'url(#tempgrad)', 'stroke-width': 2, 'stroke-dasharray': '2 4', 'stroke-linecap': 'round', opacity: 0.85 }));
     svg.appendChild(svgEl('path', { d: smoothPath(linePts), fill: 'none', stroke: 'url(#tempgrad)', 'stroke-width': 3.5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
-    // midnight dividers + hour ticks
+    // midnight dividers (straddle-detected, DST-safe) + 3-hour ticks on the
+    // wall clock — both keyed to time, so they don't bunch up over a dense past.
     for (let i = 1; i < n; i++) if (dayKey(dates[i]) !== dayKey(dates[i-1])) { const dx = (xs(i) + xs(i-1)) / 2;
       svg.appendChild(svgEl('line', { x1: dx, y1: tTop, x2: dx, y2: tBot, stroke: th.divider, 'stroke-width': 1, 'stroke-dasharray': '3 3' })); }
-    for (let k = 0; k < n; k += 3) { const h = dates[k].getHours(); const lbl = (h < 10 ? '0' : '') + h;
-      svg.appendChild(svgEl('text', { x: xs(k), y: hoursY, 'text-anchor': 'middle', 'font-size': 13, 'font-weight': 600, fill: th.tick }, lbl)); }
+    for (let t = Math.ceil(t0 / 3600) * 3600; t <= pts[n-1].time; t += 3600) {
+      const d = new Date(t * 1000); if (d.getHours() % 3 !== 0) continue;
+      const lbl = (d.getHours() < 10 ? '0' : '') + d.getHours();
+      svg.appendChild(svgEl('text', { x: xt(t), y: hoursY, 'text-anchor': 'middle', 'font-size': 13, 'font-weight': 600, fill: th.tick }, lbl)); }
 
     // weather-symbol row across the top (every 3rd hour), day/night variant.
     // Skip any that would sit under the top-left readout — only bites when the
@@ -364,21 +373,23 @@ class FmiMeteogramCard extends HTMLElement {
     // right. (~px width estimate; the label is left-anchored at padL.)
     const readoutRight = showReadout
       ? padL + readTemp.length * 12.5 + (readFeels ? readFeels.length * 7.2 + 8 : 0) : 0;
-    if (hasSymbols) for (let s = 0; s < n; s += 3) { if (pts[s].symbol == null) continue;
-      if (xs(s) - 16 < readoutRight) continue;
+    if (hasSymbols) for (let i = 0; i < n; i++) {
+      if (pts[i].symbol == null || dates[i].getHours() % 3 !== 0) continue;
+      if (xs(i) - 16 < readoutRight) continue;
       svg.appendChild(svgEl('image', {
-        href: `${ASSET_BASE}${sunStatus(dates[s])}/${pts[s].symbol}.png`,
-        x: xs(s) - 16, y: iconY - 16, width: 32, height: 32 }));
+        href: `${ASSET_BASE}${sunStatus(dates[i])}/${pts[i].symbol}.png`,
+        x: xs(i) - 16, y: iconY - 16, width: 32, height: 32 }));
     }
     // wind-arrow row along the bottom, rotated to direction
     // TODO(verify-live): confirm rotation sense — FMI WindDirection is the
     // bearing the wind blows FROM; the arrow may need +180 to point downwind.
-    if (hasWind) for (let w = 0; w < n; w += 2) { if (pts[w].wind_speed == null) continue;
-      const rot = pts[w].wind_dir ?? 0;
+    if (hasWind) for (let i = 0; i < n; i++) {
+      if (pts[i].wind_speed == null || dates[i].getHours() % 2 !== 0) continue;
+      const rot = pts[i].wind_dir ?? 0;
       svg.appendChild(svgEl('image', {
-        href: `${ASSET_BASE}${windIconForSpeed(pts[w].wind_speed)}`,
-        x: xs(w) - 8.5, y: windY - 8.5, width: 17, height: 17,
-        transform: `rotate(${rot} ${xs(w)} ${windY})` }));
+        href: `${ASSET_BASE}${windIconForSpeed(pts[i].wind_speed)}`,
+        x: xs(i) - 8.5, y: windY - 8.5, width: 17, height: 17,
+        transform: `rotate(${rot} ${xs(i)} ${windY})` }));
     }
 
     // "now" marker at the past/forecast boundary
