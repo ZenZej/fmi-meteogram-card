@@ -96,6 +96,7 @@ class FmiMeteogramCard extends HTMLElement {
     this._measured = null;       // [{time, temp}] from outdoor-temp history
     this._measuredFor = null;    // entity id the cache is for
     this._ro = null;
+    this._timer = null;          // periodic refresh (wall-clock + history)
   }
 
   // --- Lovelace config ----------------------------------------------------
@@ -109,6 +110,7 @@ class FmiMeteogramCard extends HTMLElement {
       title: config.title || 'Forecast',
       hours_past: config.hours_past ?? 12,
       hours_future: config.hours_future ?? 24,
+      refresh_interval: config.refresh_interval ?? 300,   // seconds; keeps a never-reloaded tablet current
       outdoor_temperature: config.outdoor_temperature || null,
       entities: {
         temperature: e.temperature || `${prefix}_temperature`,
@@ -120,6 +122,7 @@ class FmiMeteogramCard extends HTMLElement {
       },
     };
     if (this._hass) this._update();
+    if (this.isConnected) this._startRefresh();   // pick up an interval change on reconfig
   }
 
   set hass(hass) {
@@ -133,8 +136,29 @@ class FmiMeteogramCard extends HTMLElement {
   connectedCallback() {
     this._ro = new ResizeObserver(() => this._render());
     this._ro.observe(this);
+    this._startRefresh();
   }
-  disconnectedCallback() { if (this._ro) this._ro.disconnect(); }
+  disconnectedCallback() {
+    if (this._ro) this._ro.disconnect();
+    if (this._timer) { clearInterval(this._timer); this._timer = null; }
+  }
+
+  // A wall-tablet dashboard can stay open for days without a page reload. hass
+  // pushes keep the forecast + current readout fresh, but two things would
+  // otherwise drift: the "now" marker / past-window edge (they track the wall
+  // clock, recomputed only on render) and the measured history (fetched once,
+  // then cached). Re-render on a timer and force the history to re-fetch, so
+  // the graph advances even during a lull in state changes.
+  _startRefresh() {
+    if (this._timer) clearInterval(this._timer);
+    const sec = Math.max(30, this._config?.refresh_interval ?? 300);
+    this._timer = setInterval(() => this._refresh(), sec * 1000);
+  }
+  _refresh() {
+    this._measuredFor = null;   // invalidate the once-only history cache
+    this._maybeFetchMeasured(); // re-fetches, then re-renders on resolve
+    this._render();             // advance now-marker / window even if data is unchanged
+  }
 
   // --- Data ---------------------------------------------------------------
   _forecast(entityId) {

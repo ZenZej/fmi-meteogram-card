@@ -58,6 +58,7 @@ prefix: sensor.fmi_harmonie          # entity prefix for the fmi_harmonie sensor
 outdoor_temperature: sensor.outdoor_temp   # optional: measured past
 hours_past: 12
 hours_future: 24
+refresh_interval: 300                       # optional: seconds between refreshes
 ```
 
 | Option | Default | Description |
@@ -66,6 +67,7 @@ hours_future: 24
 | `entities` | — | Map to override individual entity ids (`temperature`, `feels_like`, `precipitation`, `wind_speed`, `wind_direction`, `weather_symbol`). |
 | `outdoor_temperature` | — | Sensor whose recent history draws the measured past. Omit for forecast-only. |
 | `hours_past` / `hours_future` | 12 / 24 | Window around *now*. |
+| `refresh_interval` | `300` | Seconds between periodic refreshes (min 30). The card also redraws on every HA state change; this timer keeps a never-reloaded dashboard (e.g. a wall tablet) current — advancing the `now` marker/window and re-fetching the measured history during lulls. |
 | `title` | `Forecast` | Card heading. |
 
 ## Development (no HA required)
