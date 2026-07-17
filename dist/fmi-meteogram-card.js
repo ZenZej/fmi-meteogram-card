@@ -49,9 +49,15 @@ function sunStatus(date) {
 }
 
 const NS = 'http://www.w3.org/2000/svg';
+const XLINK = 'http://www.w3.org/1999/xlink';
 function svgEl(tag, attrs, text) {
   const e = document.createElementNS(NS, tag);
-  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  for (const k in attrs) {
+    e.setAttribute(k, attrs[k]);
+    // <image href> is SVG2; older WebViews (e.g. the HA companion app on some
+    // tablets) only honour the SVG1.1 xlink:href. Set both so icons render there.
+    if (k === 'href') e.setAttributeNS(XLINK, 'xlink:href', attrs[k]);
+  }
   if (text != null) e.textContent = text;
   return e;
 }
