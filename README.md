@@ -21,6 +21,9 @@ work whether HACS serves the card from `/hacsfiles/` or you drop it in
 
 ## What it shows
 
+- **Current conditions** — a readout in the top-left (over the empty band above
+  the past): the outdoor sensor's temperature, coloured to match the gradient,
+  and the fmi feels-like beside it in muted grey.
 - **Temperature** — a smooth line coloured by value (a gradient mapped to the
   °C axis), continuous across measured **past** and forecast **future**, with a
   `now` marker at the boundary.

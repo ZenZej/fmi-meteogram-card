@@ -266,10 +266,22 @@ class FmiMeteogramCard extends HTMLElement {
     const hasSymbols = pts.some(p => p.symbol != null);
     const hasWind = pts.some(p => p.wind_speed != null);
 
+    // Current-conditions readout: outdoor sensor temp (fallback to the fmi
+    // temperature) coloured by the gradient, plus the fmi feels-like in muted
+    // grey. Drawn in the empty band above the past, so it adds no height.
+    const num = id => { const v = parseFloat(this._hass?.states?.[id]?.state); return Number.isFinite(v) ? v : null; };
+    const curTemp = num(this._config.outdoor_temperature) ?? num(this._config.entities.temperature);
+    const curFeels = num(this._config.entities.feels_like);
+    const readTemp = curTemp != null ? Math.round(curTemp) + '°' : '';
+    const readFeels = curFeels != null ? 'feels ' + Math.round(curFeels) + '°' : '';
+    const showReadout = !!(readTemp || readFeels);
+
     const n = pts.length, dates = pts.map(p => new Date(p.time * 1000));
     const W = Math.max(Math.round(this.clientWidth) || 470, 320);
     // Layout: reserve the icon row (top) and wind row (bottom) only if present.
-    const iconY = 18, tTop = hasSymbols ? 52 : 22, tBot = 150;
+    // With symbols the top band is already tall enough for the readout; without
+    // them, reserve a slim header so the readout clears the plot.
+    const iconY = 18, tTop = hasSymbols ? 52 : (showReadout ? 34 : 22), tBot = 150;
     const hoursY = 174, windY = 208;
     const H = hasWind ? 224 : 190;
     const padL = 34, padR = 36;
@@ -322,8 +334,14 @@ class FmiMeteogramCard extends HTMLElement {
     for (let k = 0; k < n; k += 3) { const h = dates[k].getHours(); const lbl = (h < 10 ? '0' : '') + h;
       svg.appendChild(svgEl('text', { x: xs(k), y: hoursY, 'text-anchor': 'middle', 'font-size': 13, 'font-weight': 600, fill: th.tick }, lbl)); }
 
-    // weather-symbol row across the top (every 3rd hour), day/night variant
+    // weather-symbol row across the top (every 3rd hour), day/night variant.
+    // Skip any that would sit under the top-left readout — only bites when the
+    // past band is empty/short; with history the leftmost symbol is well to its
+    // right. (~px width estimate; the label is left-anchored at padL.)
+    const readoutRight = showReadout
+      ? padL + readTemp.length * 12.5 + (readFeels ? readFeels.length * 7.2 + 8 : 0) : 0;
     if (hasSymbols) for (let s = 0; s < n; s += 3) { if (pts[s].symbol == null) continue;
+      if (xs(s) - 16 < readoutRight) continue;
       svg.appendChild(svgEl('image', {
         href: `${ASSET_BASE}${sunStatus(dates[s])}/${pts[s].symbol}.png`,
         x: xs(s) - 16, y: iconY - 16, width: 32, height: 32 }));
@@ -344,6 +362,18 @@ class FmiMeteogramCard extends HTMLElement {
     if (ni > 0) { const nx = xs(ni);
       svg.appendChild(svgEl('line', { x1: nx, y1: tTop, x2: nx, y2: tBot, stroke: th.divider, 'stroke-width': 1.5 }));
       svg.appendChild(svgEl('text', { x: nx + 4, y: tTop + 11, 'text-anchor': 'start', 'font-size': 11, 'font-weight': 700, fill: th.tick }, 'now'));
+    }
+
+    // Current-conditions readout, top-left over the empty past band.
+    if (showReadout) {
+      const label = svgEl('text', { x: padL, y: 26, 'text-anchor': 'start' });
+      if (readTemp)
+        label.appendChild(svgEl('tspan', { 'font-size': 21, 'font-weight': 700,
+          fill: tempColor(curTemp, th.stops) }, readTemp));
+      if (readFeels)
+        label.appendChild(svgEl('tspan', { dx: readTemp ? 7 : 0, 'font-size': 14,
+          'font-weight': 600, fill: 'var(--secondary-text-color, #8fa0b1)' }, readFeels));
+      svg.appendChild(label);
     }
 
     el.appendChild(svg);

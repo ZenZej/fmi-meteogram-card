@@ -45,7 +45,11 @@ const data = await (await fetch('./mock_data.json')).json();
 function mockHass(darkMode) {
   const states = {};
   for (const [id, forecast] of Object.entries(data)) {
-    if (id === 'sensor.outdoor_temperature') continue;
+    if (id === 'sensor.outdoor_temperature') {
+      // Outdoor sensor: current state only (no forecast attr), like real HA.
+      states[id] = { state: String(forecast[forecast.length - 1]?.value ?? ''), attributes: {} };
+      continue;
+    }
     states[id] = { state: String(forecast[0]?.value ?? ''), attributes: { forecast } };
   }
   return {
