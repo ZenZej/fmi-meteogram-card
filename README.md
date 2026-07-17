@@ -8,9 +8,11 @@ site. It reads its data from the companion
 merges the forecast with a measured outdoor-temperature history for the recent
 past.
 
-Plain JavaScript, **no build step** — the single `fmi-meteogram-card.js` is the
-source, loaded as an ES module. Symbol PNGs resolve relative to it, so they work
-whether HACS serves the card from `/hacsfiles/` or you drop it in `/config/www/`.
+Plain JavaScript, **no build step** — `dist/fmi-meteogram-card.js` is the source,
+loaded as an ES module. The symbol PNGs live in `dist/symbols/` beside it (HACS
+only ships a plugin's `dist/` folder) and resolve relative to the module, so they
+work whether HACS serves the card from `/hacsfiles/` or you drop it in
+`/config/www/`.
 
 > **Status: scaffolding.** Temperature + feels-like + rain + past/forecast merge
 > + light/dark theming are implemented and verified in the dev harness. The
@@ -74,7 +76,7 @@ python3 -m http.server 8777
 # open http://localhost:8777/dev/preview.html
 ```
 
-The preview loads the real `fmi-meteogram-card.js`, so it exercises the actual
+The preview loads the real `dist/fmi-meteogram-card.js`, so it exercises the actual
 `setConfig` / `hass` / render path — only the data is mocked. A theme toggle
 previews light and dark.
 

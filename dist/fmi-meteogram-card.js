@@ -162,12 +162,28 @@ class FmiMeteogramCard extends HTMLElement {
       })
       .filter(p => p.time >= now - 3600 && p.time <= horizon);
 
-    const past = (this._measured || [])
-      .filter(p => p.time >= now - this._config.hours_past * 3600 && p.time < future[0]?.time)
+    const pastRaw = (this._measured || [])
+      .filter(p => p.time >= now - this._config.hours_past * 3600 && p.time < future[0]?.time);
+    const past = this._hourlyThin(pastRaw)
       .map(p => ({ time: p.time, temp: p.temp, measured: true,
                    feels_like: null, rain: 0, wind_speed: null, wind_dir: null, symbol: null }));
 
     return past.concat(future).sort((a, b) => a.time - b.time);
+  }
+
+  // HA records the outdoor sensor on every change (often sub-minute), so the raw
+  // measured history holds far more points than the hourly forecast. Since the
+  // x-axis spaces points by index, those dense points would dwarf the forecast
+  // and shove it off the right edge. Thin to ~one sample per clock hour (the
+  // one nearest the hour mark), matching the forecast cadence.
+  _hourlyThin(rows) {
+    const byHour = new Map();
+    for (const p of rows) {
+      const hour = Math.round(p.time / 3600);
+      const cur = byHour.get(hour);
+      if (!cur || Math.abs(p.time - hour * 3600) < Math.abs(cur.time - hour * 3600)) byHour.set(hour, p);
+    }
+    return [...byHour.values()].sort((a, b) => a.time - b.time);
   }
 
   // Pull the outdoor sensor's recent history once per entity change. HA gives a
