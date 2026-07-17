@@ -80,10 +80,12 @@ previews light and dark.
 
 ## Credits
 
-Design and weather/wind/sun icons adapted from the author's `weather-page`
-project. Weather data via the Finnish Meteorological Institute
-[open data](https://en.ilmatieteenlaitos.fi/open-data) (through
-`fmi-harmonie-ha`), used under its open-data licence.
+Design and the weather/wind/sun icons in `symbols/` are original work by the
+author (shared with the `weather-page` project). Weather data via the Finnish
+Meteorological Institute [open data](https://en.ilmatieteenlaitos.fi/open-data)
+(through `fmi-harmonie-ha`), used under its open-data licence.
 
-> TODO: confirm/attach the licence for the bundled `symbols/` icons before
-> making this repo public.
+## License
+
+[MIT](LICENSE) © ZenZej. The bundled `symbols/` icons are the author's original
+design and are covered by the same MIT license.
