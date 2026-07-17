@@ -85,12 +85,12 @@ previews light and dark.
 
 ## Credits
 
-Design and the weather/wind/sun icons in `symbols/` are original work by the
+Design and the weather/wind/sun icons in `dist/symbols/` are original work by the
 author (shared with the `weather-page` project). Weather data via the Finnish
 Meteorological Institute [open data](https://en.ilmatieteenlaitos.fi/open-data)
 (through `fmi-harmonie-ha`), used under its open-data licence.
 
 ## License
 
-[MIT](LICENSE) © ZenZej. The bundled `symbols/` icons are the author's original
+[MIT](LICENSE) © ZenZej. The bundled `dist/symbols/` icons are the author's original
 design and are covered by the same MIT license.
