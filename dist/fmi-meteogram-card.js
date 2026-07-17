@@ -298,7 +298,7 @@ class FmiMeteogramCard extends HTMLElement {
     const curTemp = num(this._config.outdoor_temperature) ?? num(this._config.entities.temperature);
     const curFeels = num(this._config.entities.feels_like);
     const readTemp = curTemp != null ? curTemp.toFixed(1) + '°' : '';
-    const readFeels = curFeels != null ? 'feels ' + curFeels.toFixed(1) + '°' : '';
+    const readFeels = curFeels != null ? curFeels.toFixed(1) + '°' : '';
     const showReadout = !!(readTemp || readFeels);
 
     const n = pts.length, dates = pts.map(p => new Date(p.time * 1000));
