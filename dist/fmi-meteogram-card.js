@@ -73,6 +73,15 @@ function smoothPath(pts) {
 }
 const dayKey = d => d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
 
+// Zero-based rain axis max: smallest candidate ≥ v, each chosen so v/2 stays a
+// tidy label (0.5, 1, 2, 3, 5). Floor of 1 keeps a sane scale on dry days;
+// beyond the table, round up to 10s (still halves to a multiple of 5).
+function niceRainMax(v) {
+  const steps = [1, 2, 4, 6, 10];
+  for (let i = 0; i < steps.length; i++) if (v <= steps[i]) return steps[i];
+  return Math.ceil(v / 10) * 10;
+}
+
 function hex2rgb(h){ return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)]; }
 function rgb2hex(a){ return '#' + a.map(x => Math.round(x).toString(16).padStart(2,'0')).join(''); }
 function tempColor(v, stops) {
@@ -314,11 +323,23 @@ class FmiMeteogramCard extends HTMLElement {
     const temps = pts.map(p => p.temp);
     const feelsVals = pts.filter(p => p.feels_like != null).map(p => p.feels_like);
     const rains = pts.map(p => p.rain);
-    const tMin = Math.floor(Math.min(...temps, ...feelsVals)) - 1;
-    const tMax = Math.ceil(Math.max(...temps)) + 1;
+    // °C axis: pick the smallest nice step whose snapped range fits ≤ MAX_T_TICKS
+    // labels, then snap the data min/max OUTWARD to multiples of it — so both
+    // extremes land on round, labelled ticks and real data never touches an edge.
+    const MAX_T_TICKS = 6, NICE_STEPS = [1, 2, 5, 10, 20, 50];
+    const tLo = Math.min(...temps, ...feelsVals), tHi = Math.max(...temps, ...feelsVals);
+    let tStep, tMin, tMax;
+    for (let ti = 0; ti < NICE_STEPS.length; ti++) {
+      tStep = NICE_STEPS[ti];
+      tMin = Math.floor(tLo / tStep) * tStep;
+      tMax = Math.ceil(tHi / tStep) * tStep;
+      if (tMax === tMin) tMax = tMin + tStep;          // flat data: force a range
+      if ((tMax - tMin) / tStep + 1 <= MAX_T_TICKS) break;
+    }
     // Rain axis spans the full plot height (ticks + bars top-to-bottom), same
-    // vertical extent as the °C axis.
-    const rMax = Math.max(...rains, 1), rainH = tBot - tTop;
+    // vertical extent as the °C axis. Nice, zero-based max ≥ data drives both
+    // the ticks and the bar heights, so they share one clean scale.
+    const rMax = niceRainMax(Math.max(...rains, 0)), rainH = tBot - tTop;
     // Time-proportional x-axis: position by timestamp, not index, so a densely
     // sampled past (e.g. 10-min buckets) keeps its true share of the width
     // instead of crowding out the hourly forecast.
@@ -340,14 +361,15 @@ class FmiMeteogramCard extends HTMLElement {
       grad.appendChild(svgEl('stop', { offset: (f * 100).toFixed(1) + '%', 'stop-color': tempColor(temp, th.stops) })); }
     defs.appendChild(grad); svg.appendChild(defs);
 
-    // gridlines + °C ticks
-    const step = (tMax - tMin) <= 12 ? 2 : 5;
-    for (let t = Math.ceil(tMin / step) * step; t < tMax; t += step) { const gy = yT(t);
-      svg.appendChild(svgEl('line', { x1: padL, y1: gy, x2: W - padR, y2: gy, stroke: th.grid, 'stroke-width': 1 }));
+    // gridlines + °C ticks, tMin..tMax inclusive. Interior ticks get a gridline;
+    // the two extremes get a label only, so the plot isn't boxed in top & bottom.
+    for (let t = tMin; t <= tMax; t += tStep) { const gy = yT(t);
+      if (t !== tMin && t !== tMax)
+        svg.appendChild(svgEl('line', { x1: padL, y1: gy, x2: W - padR, y2: gy, stroke: th.grid, 'stroke-width': 1 }));
       svg.appendChild(svgEl('text', { x: padL - 6, y: gy + 4, 'text-anchor': 'end', 'font-size': 13, 'font-weight': 600, fill: th.tick }, t + '°'));
     }
-    // rain (mm) axis
-    const rTicks = rMax <= 1 ? [0, 0.5, 1] : (rMax <= 2 ? [0, 1, 2] : [0, Math.round(rMax / 2), Math.ceil(rMax)]);
+    // rain (mm) axis — zero-based, evenly spaced 0 / max/2 / max
+    const rTicks = [0, rMax / 2, rMax];
     rTicks.forEach(rv => { const ry = tBot - (rv / rMax) * rainH;
       svg.appendChild(svgEl('text', { x: W - padR + 6, y: ry + 4, 'text-anchor': 'start', 'font-size': 12, 'font-weight': 600, fill: th.tick }, rv)); });
     // rain bars — half an hour-slot wide (rain is forecast-only and hourly)
